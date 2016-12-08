@@ -16,7 +16,7 @@ LIST_FILE="proxy.list"
 LIST_PATH="$(cd `dirname $0`; pwd)/$LIST_FILE"
 
 # Proxychains4 配置路径
-PROXY_CHAINS_CONFIG_PATH="config/"
+PROXY_CHAINS_CONFIG_PATH="$(cd `dirname $0`; pwd)/config"
 
 # 设置文件分隔符
 PRIVOXY_CONFIGFILE="/etc/privoxy/config"
@@ -117,7 +117,7 @@ local_daemon(){
         docker run -dit --name=$CONTAINER_NAME -e IP="$SERVER_IP" -e MIDDLE_PORT=$CONTAINER_PORT -p 127.0.0.1:$CONTAINER_PORT:$CONTAINER_PORT --restart=always $DOCKER_IMAGE
         echo "  $CONTAINER_NAME 容器已经启动。"
         separator
-        sudo cp -f config/default.conf $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
+        sudo cp -f $PROXY_CHAINS_CONFIG_PATH/default.conf $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
         sudo sed -i '$d' $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
         sudo bash -c "echo 'socks5 127.0.0.1 $SOCKS_PORT' >> $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf"
         echo "  相关配置已经设置完成。"
@@ -296,7 +296,19 @@ while getopts ":cfmn:p:khls" optname
     esac
   done
 if [ ! -f $LIST_PATH ]; then touch "$LIST_PATH"; fi
-disconnect
-connect
-monitor
+
+# 调试函数
+debug(){
+    echo "调试"
+}
+
+# 主函数
+main(){
+    disconnect
+    connect
+    monitor
+}
+
+#debug
+main
 exit 0
