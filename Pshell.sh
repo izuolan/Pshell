@@ -3,22 +3,21 @@
 # 设置守护容器的镜像
 DOCKER_IMAGE="zuolan/ptunnel:local"
 
-# 默认IP为本地，可以通过 -n 参数修改，修改后可允许其他电脑使用你的Socks5代理。
+# 设置文件分隔符
 FILE_SEPARATOR=":"
 
 # 设置socks5转http配置文件的路径，默认情况下不用修改。
-IP=127.0.0.1
+# 默认IP为本地，可以通过 -n 参数修改，修改后可允许其他电脑使用你的Socks5代理。
+IP=172.16.168.200
 
 # Proxy列表定义
 LIST_FILE="proxy.list"
-
 # 为alias设置绝对路径。
 LIST_PATH="$(cd `dirname $0`; pwd)/$LIST_FILE"
 
 # Proxychains4 配置路径
 PROXY_CHAINS_CONFIG_PATH="$(cd `dirname $0`; pwd)/config"
-
-# 设置文件分隔符
+# 设置 Privoxy 配置路径
 PRIVOXY_CONFIGFILE="/etc/privoxy/config"
 
 # 设置服务端的日志文件
@@ -113,15 +112,13 @@ local_daemon(){
     do
         docker kill $CONTAINER_NAME >/dev/null 2>&1 && docker rm -f $CONTAINER_NAME >/dev/null 2>&1
         echo "  $CONTAINER_NAME 容器已经删除。"
-        separator
         docker run -dit --name=$CONTAINER_NAME -e IP="$SERVER_IP" -e MIDDLE_PORT=$CONTAINER_PORT -p 127.0.0.1:$CONTAINER_PORT:$CONTAINER_PORT --restart=always $DOCKER_IMAGE
         echo "  $CONTAINER_NAME 容器已经启动。"
-        separator
         sudo cp -f $PROXY_CHAINS_CONFIG_PATH/default.conf $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
         sudo sed -i '$d' $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
-        sudo bash -c "echo 'socks5 127.0.0.1 $SOCKS_PORT' >> $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf"
-        echo "  相关配置已经设置完成。"
-        separator;separator;
+        sudo bash -c "echo 'socks5 $IP $SOCKS_PORT' >> $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf"
+        echo "  Proxychains4 配置已经设置完成。"
+        separator
     done < $LIST_PATH
 }
 
@@ -223,24 +220,29 @@ fix_connect(){
 
 # 获取ssh的pid
 get_connect_pid(){
-    connect_pid=$(ps ssh | grep ssh | grep $SOCKS_PORT | awk '{print $2}')
+    connect_pid=$(ps -A ssh | grep ssh | grep $SOCKS_PORT | awk '{print $2}')
     if [ ! -n "$connect_pid" ]; then connect_pid="进程不存在"; fi
 }
 
 # 状态查看函数
 monitor(){
     separator
-    echo -en '  代理节点  \t-  Socks 端口  \t-  容器状态  \t-  进程 PID\n'
+    echo -en '  代理节点  \t-  Socks 端口  \t-  容器状态  \t-  PID\n'
     separator
     while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP
     do
         get_connect_pid
-        container_status=$(docker inspect --format='{{.State.Status}}' $CONTAINER_NAME)
+        container_status=$(docker inspect --format='{{.State.Status}}' $CONTAINER_NAME 2>&1)
         echo -en '  '$NODE_NAME'  \t-  '$SOCKS_PORT'  \t-  '$container_status'  \t-  '$connect_pid'\n'
     done < $LIST_PATH
     separator
     NOW_PORT=$(cat $PRIVOXY_CONFIGFILE | tail -n 20 | grep "forward-socks5t" | awk '{print $3}' | cut -d: -f2)
-    echo -en '  socks5->http:'$NOW_PORT'->8118 | Proxy IP:'$(ps ssh | grep ssh | grep 10001 | awk '{print $14}' | cut -d: -f1)'\n'
+    echo -en '  socks5->http:'$NOW_PORT'->8118 | Proxy IP:'$(ps -A ssh | grep ssh | grep 10001 | awk '{print $14}' | cut -d: -f1)'\n'
+    separator
+    echo -en '  容器  CPU  \t\t下载  \t\t上传\n'
+    separator
+    container_list=$(cut -d: -f 2 $LIST_PATH | xargs)
+    docker stats --no-stream $container_list | grep '[a-z]' | awk '{print $1,$2,$9,$10,$12,$13}' | tr ' ' '\t' | sed 's/%\t/%\t\t/g' | sed 's/^/  /g'
     separator
 }
 
@@ -261,12 +263,12 @@ socks_to_http(){
     if [ "$?" = "1" ]; then echo "Privoxy 重启失败，请手动重启。";else echo "Privoxy 重启完成。"; fi
     cat $PRIVOXY_CONFIGFILE | tail -n 20 | grep "forward-socks5t" >/dev/null 2>&1 &
     if [ "$?" = "1" ]; then
-        sudo bash -c "echo 'forward-socks5t / 127.0.0.1:$NEW_PORT .' >> $PRIVOXY_CONFIGFILE"
+        sudo bash -c "echo 'forward-socks5t / $IP:$NEW_PORT .' >> $PRIVOXY_CONFIGFILE"
     else
         NOW_URI=$(cat $PRIVOXY_CONFIGFILE | tail -n 20 | grep "forward-socks5t" | awk '{print $3}')
         let line_end=$(wc -l $PRIVOXY_CONFIGFILE | awk '{print $1}')
         let line_start=$line_end-20
-        sudo sed -i "$line_start,$line_end s/$NOW_URI/127.0.0.1:$NEW_PORT/g" $PRIVOXY_CONFIGFILE
+        sudo sed -i "$line_start,$line_end s/$NOW_URI/$IP:$NEW_PORT/g" $PRIVOXY_CONFIGFILE
     fi
     separator
     echo "  转发端口设置成功！"
@@ -296,19 +298,14 @@ while getopts ":cfmn:p:khls" optname
     esac
   done
 if [ ! -f $LIST_PATH ]; then touch "$LIST_PATH"; fi
-
-# 调试函数
 debug(){
-    echo "调试"
+    echo $PROXY_CHAINS_CONFIG_PATH
 }
-
-# 主函数
 main(){
     disconnect
     connect
     monitor
 }
-
 #debug
 main
 exit 0
