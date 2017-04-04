@@ -7,8 +7,8 @@ DOCKER_IMAGE="zuolan/ptunnel:local"
 FILE_SEPARATOR=":"
 
 # 设置socks5转http配置文件的路径，默认情况下不用修改。
-# 默认IP为本地，可以通过 -n 参数修改，修改后可允许其他电脑使用你的Socks5代理。
-IP=172.16.168.200
+# 当IP为127.0.0.1时只允许本地访问，可以通过 -n 参数指定网卡，修改后可允许其他电脑使用你的Socks5代理（或者直接使用0.0.0.0，允许所有人访问）。
+IP=0.0.0.0
 
 # Proxy列表定义
 LIST_FILE="proxy.list"
@@ -32,46 +32,13 @@ TIME_OUT=2
 # 测试连通站点
 TEST_SITE="baidu.com"
 TEST_SITE_SIZE_HEADER="335"
+
+# 如果出现连接问题可以执行 echo "StrictHostKeyChecking no" >> $HOME/.ssh/config 设置为非严格连接模式。
 ########################################################################
 
-# 服务器安装并运行 Ptunnel
-server_daemon(){
-    command -v ptunnel >/dev/null 2>&1;
-    if [ $? != 0 ]; then
-        command -v apt >/dev/null 2>&1
-        if [ $? = 0 ]; then
-            sudo apt install -y ptunnel;
-            separator
-            echo "  安装 Ptunnel 完成。"
-            separator
-        else
-            command -v yum >/dev/null 2>&1
-            if [ $? = 0 ]; then
-                sudo yum install -y ptunnel
-                separator
-                echo "  安装 Ptunnel 完成。"
-                separator
-            else
-                separator
-                echo "  自动安装失败，请使用手动安装的方式从源代码安装 Ptunnel："
-                echo "$ curl -o PingTunnel-0.72.tar.gz -L http://www.cs.uit.no/~daniels/PingTunnel/PingTunnel-0.72.tar.gz"
-                echo "$ <系统包管理工具> install make gcc libpcap-dev"
-                echo "$ tar xvf PingTunnel-0.72.tar.gz && cd PingTunnel && make install"
-                separator
-            fi
-        fi
-    fi
-    killall ptunnel
-    nohup ptunnel > $PTUNNEL_LOG 2>&1
-    echo "  Ptunnel 已经启动。"
-    separator
-    exit 0;
-}
-
-# 本地运行守护容器
-# 如果出现连接问题可以执行 echo "StrictHostKeyChecking no" >> $HOME/.ssh/config 设置为非严格连接模式。
+# 安装软件
 install_base(){
-software_deps="git make privoxy libpcap-dev"
+software_deps="git make privoxy libpcap-dev gcc"
     command -v apt >/dev/null 2>&1
     if [ $? = 0 ]; then
         sudo apt install -y $software_deps
@@ -100,19 +67,40 @@ install_proxychains4(){
     sudo ./configure –prefix=/usr –sysconfdir=/etc
     sudo make && sudo make install && sudo make install-config
 }
-local_daemon(){
+install_docker(){
     command -v docker >/dev/null 2>&1; if [ $? != 0 ]; then curl -sSL https://get.docker.com/ | sh; fi
-    command -v git make >/dev/null 2>&1; if [ $? != 0 ]; then install_base; fi
+    DOCKER_STATUS=$(sudo systemctl status docker | grep "Active:" | cut -d'(' -f2 | cut -d')' -f1)
+    if [ $DOCKER_STATUS != "running" ]; then sudo systemctl restart docker; fi
+}
+
+# 服务器安装并运行 Ptunnel
+server_daemon(){
+    install_docker;
+    while true
+    do
+        echo -n "输入密码："; read -s FIRST_PASSWORD;echo ""
+        echo -n "再输入一次密码："; read -s SECOND_PASSWORD;echo ""
+        if [ "$FIRST_PASSWORD" = "$SECOND_PASSWORD" ]; then PASSWORD=$FIRST_PASSWORD;break; else echo "两次密码不相同。"; fi
+    done
+    sudo docker run -dit --name=server --net=host -e PASSWORD=$PASSWORD zuolan/ptunnel:server
+    echo "  Ptunnel 已经启动。"
+    separator
+}
+
+# 本地运行守护容器
+local_daemon(){
+    command -v git make curl gcc >/dev/null 2>&1; if [ $? != 0 ]; then install_base; fi
+    install_docker;
     if [ ! -f /etc/init.d/privoxy ]; then install_base; fi
     command -v proxychains4 >/dev/null 2>&1; if [ $? != 0 ]; then install_proxychains4; fi
     separator
     echo "  正在启动守护容器，原有同名容器会被强制删除。"
     separator
-    while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP
+    while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD
     do
-        docker kill $CONTAINER_NAME >/dev/null 2>&1 && docker rm -f $CONTAINER_NAME >/dev/null 2>&1
+        sudo docker kill $CONTAINER_NAME >/dev/null 2>&1 && sudo docker rm -f $CONTAINER_NAME >/dev/null 2>&1
         echo "  $CONTAINER_NAME 容器已经删除。"
-        docker run -dit --name=$CONTAINER_NAME -e IP="$SERVER_IP" -e MIDDLE_PORT=$CONTAINER_PORT -p 127.0.0.1:$CONTAINER_PORT:$CONTAINER_PORT --restart=always $DOCKER_IMAGE
+        sudo docker run -dit --name=$CONTAINER_NAME -e IP="$SERVER_IP" -e MIDDLE_PORT=$CONTAINER_PORT -e PASSWORD=$PASSWORD -p 127.0.0.1:$CONTAINER_PORT:$CONTAINER_PORT --restart=always $DOCKER_IMAGE
         echo "  $CONTAINER_NAME 容器已经启动。"
         sudo cp -f $PROXY_CHAINS_CONFIG_PATH/default.conf $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
         sudo sed -i '$d' $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
@@ -155,7 +143,7 @@ exit 0
 
 # 连接函数
 connect(){
-    while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP
+    while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD
     do
         nohup ssh -p $CONTAINER_PORT -ND $IP:$SOCKS_PORT root@localhost >/dev/null 2>&1 &
     done < $LIST_PATH
@@ -163,7 +151,7 @@ connect(){
 
 # 断开连接
 disconnect(){
-    while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP
+    while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD
     do
         get_connect_pid
         kill $connect_pid >/dev/null 2>&1
@@ -176,12 +164,12 @@ echo -en "\033[?25l"
     while :;do
         echo -en " | "
         bash -c "$0 -f" 2>&1
-        http_status=$(timeout $TIME_OUT curl -I -s --connect-timeout $TIME_OUT $TEST_SITE -w %{size_header} | tail -n1)
+	    http_status=$(timeout $TIME_OUT curl -I -s --connect-timeout $TIME_OUT $TEST_SITE -w %{size_header} | tail -n1)
         if [ "$http_status" != "$TEST_SITE_SIZE_HEADER" ];then
-            echo -en "http 代理异常"
-            # sudo bash -c "echo \"export http_proxy='http://172.16.168.200:8118'\"" >> /etc/profile
-            # sudo bash -c "echo \"export https_proxy='http://172.16.168.200:8118'\"" >> /etc/profile
-            # sudo bash -c "/etc/init.d/privoxy restart" >/dev/null 2>&1
+	    echo -en "http 代理异常"
+        # sudo bash -c "echo \"export http_proxy='http://172.16.168.200:8118'\"" >> /etc/profile
+        # sudo bash -c "echo \"export https_proxy='http://172.16.168.200:8118'\"" >> /etc/profile
+        # sudo bash -c "/etc/init.d/privoxy restart" >/dev/null 2>&1
         else
             echo -en "http 代理正常"
         fi
@@ -229,10 +217,10 @@ monitor(){
     separator
     echo -en '  代理节点  \t-  Socks 端口  \t-  容器状态  \t-  PID\n'
     separator
-    while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP
+    while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD
     do
         get_connect_pid
-        container_status=$(docker inspect --format='{{.State.Status}}' $CONTAINER_NAME 2>&1)
+        container_status=$(sudo docker inspect --format='{{.State.Status}}' $CONTAINER_NAME 2>&1)
         echo -en '  '$NODE_NAME'  \t-  '$SOCKS_PORT'  \t-  '$container_status'  \t-  '$connect_pid'\n'
     done < $LIST_PATH
     separator
@@ -242,7 +230,7 @@ monitor(){
     echo -en '  容器  CPU  \t\t下载  \t\t上传\n'
     separator
     container_list=$(cut -d: -f 2 $LIST_PATH | xargs)
-    docker stats --no-stream $container_list | grep '[a-z]' | awk '{print $1,$2,$9,$10,$12,$13}' | tr ' ' '\t' | sed 's/%\t/%\t\t/g' | sed 's/^/  /g'
+    sudo docker stats --no-stream $container_list | grep '[a-z]' | awk '{print $1,$2,$9,$10,$12,$13}' | tr ' ' '\t' | sed 's/%\t/%\t\t/g' | sed 's/^/  /g'
     separator
 }
 
@@ -261,7 +249,7 @@ socks_to_http(){
     fi
     sudo bash -c "/etc/init.d/privoxy restart" >/dev/null 2>&1 &
     if [ "$?" = "1" ]; then echo "Privoxy 重启失败，请手动重启。";else echo "Privoxy 重启完成。"; fi
-    cat $PRIVOXY_CONFIGFILE | tail -n 20 | grep "forward-socks5t" >/dev/null 2>&1 &
+    cat $PRIVOXY_CONFIGFILE | tail -n 20 | grep "forward-socks5t" >/dev/null 2>&1
     if [ "$?" = "1" ]; then
         sudo bash -c "echo 'forward-socks5t / $IP:$NEW_PORT .' >> $PRIVOXY_CONFIGFILE"
     else
