@@ -87,7 +87,9 @@ server_daemon(){
         echo -n "再输入一次密码："; read -s SECOND_PASSWORD;echo ""
         if [ "$FIRST_PASSWORD" = "$SECOND_PASSWORD" ]; then PASSWORD=$FIRST_PASSWORD;break; else echo "两次密码不相同。"; fi
     done
-    sudo docker run -dit --name=server --net=host -e PASSWORD=$PASSWORD zuolan/ptunnel:server
+    docker ps -a | grep "ptunnel_server" >/dev/null 2>&1;
+    if [ $? = 0 ]; then sudo docker rm -f ptunnel_server; fi
+    sudo docker run -dit --name=ptunnel_server --net=host -e PASSWORD=$PASSWORD zuolan/ptunnel:server
     echo "  Ptunnel 已经启动。"
     separator
     exit 0;
