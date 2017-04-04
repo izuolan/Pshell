@@ -38,7 +38,7 @@ TEST_SITE_SIZE_HEADER="335"
 
 # 安装软件
 install_base(){
-software_deps="git make privoxy libpcap-dev gcc"
+software_deps="git make privoxy libpcap-dev gcc sudo"
     command -v apt >/dev/null 2>&1
     if [ $? = 0 ]; then
         sudo apt install -y $software_deps
@@ -97,7 +97,7 @@ server_daemon(){
 
 # 本地运行守护容器
 local_daemon(){
-    command -v git make curl gcc >/dev/null 2>&1; if [ $? != 0 ]; then install_base; fi
+    command -v git make curl gcc sudo >/dev/null 2>&1; if [ $? != 0 ]; then install_base; fi
     install_docker;
     if [ ! -f /etc/init.d/privoxy ]; then install_base; fi
     command -v proxychains4 >/dev/null 2>&1; if [ $? != 0 ]; then install_proxychains4; fi
