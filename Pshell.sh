@@ -90,6 +90,7 @@ server_daemon(){
     sudo docker run -dit --name=server --net=host -e PASSWORD=$PASSWORD zuolan/ptunnel:server
     echo "  Ptunnel 已经启动。"
     separator
+    exit 0;
 }
 
 # 本地运行守护容器
