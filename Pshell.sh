@@ -69,8 +69,13 @@ install_proxychains4(){
 }
 install_docker(){
     command -v docker >/dev/null 2>&1; if [ $? != 0 ]; then curl -sSL https://get.docker.com/ | sh; fi
-    DOCKER_STATUS=$(service docker status | grep "Active:" | cut -d'(' -f2 | cut -d')' -f1)
-    if [ "$DOCKER_STATUS" != "running" ]; then service docker restart; fi
+    command -v systemctl >/dev/null 2>&1; if [ $? = 0 ]; then
+        DOCKER_STATUS=$(systemctl status docker | grep "Active:" | cut -d'(' -f2 | cut -d')' -f1)
+        if [ "$DOCKER_STATUS" != "running" ]; then systemctl restart docker; fi
+    else
+        DOCKER_STATUS=$(service docker status | cut -d'/' -f2 | cut -d',' -f1)
+        if [ "$DOCKER_STATUS" != "running" ]; then service docker restart; fi
+    fi
 }
 
 # 服务器安装并运行 Ptunnel
