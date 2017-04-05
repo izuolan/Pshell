@@ -78,7 +78,7 @@ install_docker() {
 	if [ $? != 0 ]; then curl -sSL https://get.docker.com/ | sh; fi
 	command -v systemctl >/dev/null 2>&1
 	if [ $? = 0 ]; then
-		DOCKER_SddTATUS=$(systemctl status docker | grep "Active:" | cut -d'(' -f2 | cut -d')' -f1)
+		DOCKER_STATUS=$(systemctl status docker | grep "Active:" | cut -d'(' -f2 | cut -d')' -f1)
 		if [ "$DOCKER_STATUS" != "running" ]; then systemctl restart docker; fi
 	else
 		DOCKER_STATUS=$(service docker status | cut -d'/' -f2 | cut -d',' -f1)
