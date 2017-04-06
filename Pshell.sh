@@ -99,16 +99,16 @@ server_daemon() {
 
 	# if [ -n "$PASSWORD" ]; then break; fi
 	while true; do
-		echo -n "输入密码："
+		echo -n "  输入密码："
 		read -s FIRST_PASSWORD
 		echo ""
-		echo -n "再输入一次密码："
+		echo -n "  再输入一次密码："
 		read -s SECOND_PASSWORD
 		echo ""
 		if [ "$FIRST_PASSWORD" = "$SECOND_PASSWORD" ]; then
 			PASSWORD=$FIRST_PASSWORD
 			break
-		else echo "两次密码不相同。"; fi
+		else echo "  两次密码不相同。"; fi
 	done
 	docker ps -a | grep "ptunnel_server" >/dev/null 2>&1
 	if [ $? = 0 ]; then docker rm -f ptunnel_server; fi
@@ -120,10 +120,9 @@ server_daemon() {
 
 # 本地运行守护容器
 local_daemon() {
-	command -v git make curl gcc sudo >/dev/null 2>&1
+	command -v git make curl gcc sudo privoxy >/dev/null 2>&1
 	if [ $? != 0 ]; then install_base; fi
 	install_docker
-	if [ ! -f /etc/init.d/privoxy ]; then install_base; fi
 	command -v proxychains4 >/dev/null 2>&1
 	if [ $? != 0 ]; then install_proxychains4; fi
 	separator
@@ -134,11 +133,19 @@ local_daemon() {
 		echo "  $CONTAINER_NAME 容器已经删除。"
 		docker run -dit --name=$CONTAINER_NAME -e IP="$SERVER_IP" -e MIDDLE_PORT=$CONTAINER_PORT -e PASSWORD=$PASSWORD -p 127.0.0.1:$CONTAINER_PORT:$CONTAINER_PORT --restart=always $DOCKER_IMAGE
 		echo "  $CONTAINER_NAME 容器已经启动。"
-		sudo cp -f $PROXY_CHAINS_CONFIG_PATH/default.conf $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
-		sudo sed -i '$d' $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
-		sudo bash -c "echo 'socks5 $IP $SOCKS_PORT' >> $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf"
+		cp -f $PROXY_CHAINS_CONFIG_PATH/default.conf $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
+		sed -i '$d' $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
+		bash -c "echo 'socks5 $IP $SOCKS_PORT' >> $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf"
 		echo "  Proxychains4 配置已经设置完成。"
 		separator
+		# 清除旧的容器
+		NOW_CONTAINER_LIST=$(eval docker ps -a -f 'ancestor=$DOCKER_IMAGE' | grep "$DOCKER_IMAGE" | awk '{print $NF}')
+		while read NOW_CONTAINER_NAME; do
+			cat $LIST_PATH | grep "$NOW_CONTAINER_NAME" >/dev/null 2>&1
+			if [ $? != 0 ]; then docker rm -f $NOW_CONTAINER_NAME >/dev/null 2>&1; fi
+		done <<EOF
+$NOW_CONTAINER_LIST
+EOF
 	done <$LIST_PATH
 }
 
@@ -265,13 +272,11 @@ monitor() {
 
 # 设置网卡
 driver() {
-	DRIVER=$2
 	IP=$(ip -o -4 addr list $DRIVER | awk '{print $4}' | cut -d/ -f1)
 }
 
 # 设置socks5转发端口
 socks_to_http() {
-	NEW_PORT=$OPTARG
 	grep "CONFIGFILE=$PRIVOXY_CONFIGFILE" /etc/init.d/privoxy >/dev/null 2>&1 &
 	if [ "$?" = "1" ]; then
 		sudo sed -i "s:CONFIGFILE=/etc/privoxy/config:CONFIGFILE=$PRIVOXY_CONFIGFILE:g" /etc/init.d/privoxy
@@ -299,7 +304,6 @@ restart_sshd() {
 	echo "全部代理已重置，sshd 进程已终止，正在重新建立代理连接。"
 }
 
-
 while [ -n "$1" ]; do
 	case "$1" in
 		-a | --auto)
@@ -313,11 +317,13 @@ while [ -n "$1" ]; do
 			monitor
 			exit 0
 			;;
-		-d| --driver)
+		-d | --driver)
+			DRIVER=$2
 			driver
 			shift
 			;;
 		-p | --port)
+			NEW_PORT=$2
 			socks_to_http
 			shift
 			;;
