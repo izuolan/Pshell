@@ -95,14 +95,14 @@ install_docker() {
 
 # 服务器安装并运行 Ptunnel
 server_daemon() {
+	if [ `id -u` -eq 0 ];then echo "  开始安装 Ptunnel 服务端。"; else echo "  请使用 Root 用户执行本脚本。";exit 1; fi
 	install_docker
-
 	# if [ -n "$PASSWORD" ]; then break; fi
 	while true; do
-		echo -n "  输入密码："
+		echo -n "  输入 Ptunnel 密码："
 		read -s FIRST_PASSWORD
 		echo ""
-		echo -n "  再输入一次密码："
+		echo -n "  再输入一次 Ptunnel 密码："
 		read -s SECOND_PASSWORD
 		echo ""
 		if [ "$FIRST_PASSWORD" = "$SECOND_PASSWORD" ]; then
@@ -112,7 +112,7 @@ server_daemon() {
 	done
 	docker ps -a | grep "ptunnel_server" >/dev/null 2>&1
 	if [ $? = 0 ]; then docker rm -f ptunnel_server; fi
-	docker run -dit --name=ptunnel_server --net=host -e PASSWORD=$PASSWORD zuolan/ptunnel:server
+	docker run -dit --name=ptunnel_server --net=host -e PASSWORD=$PASSWORD --restart=always zuolan/ptunnel:server
 	echo "  Ptunnel 已经启动。"
 	separator
 	exit 0
