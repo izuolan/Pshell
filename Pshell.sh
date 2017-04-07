@@ -39,7 +39,6 @@ TIME_OUT=2
 TEST_SITE="baidu.com"
 TEST_SITE_SIZE_HEADER="335"
 
-# 如果出现连接问题可以执行 echo "StrictHostKeyChecking no" >> $HOME/.ssh/config 设置为非严格连接模式。
 ########################################################################
 
 # 安装软件
@@ -95,7 +94,10 @@ install_docker() {
 
 # 服务器安装并运行 Ptunnel
 server_daemon() {
-	if [ `id -u` -eq 0 ];then echo "  开始安装 Ptunnel 服务端。"; else echo "  请使用 Root 用户执行本脚本。";exit 1; fi
+	if [ $(id -u) -eq 0 ]; then echo "  开始安装 Ptunnel 服务端。"; else
+		echo "  请使用 Root 用户执行本脚本。"
+		exit 1
+	fi
 	install_docker
 	# if [ -n "$PASSWORD" ]; then break; fi
 	while true; do
@@ -128,7 +130,7 @@ local_daemon() {
 	separator
 	echo "  正在启动守护容器，原有同名容器会被强制删除。"
 	separator
-	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD; do
+	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
 		docker kill $CONTAINER_NAME >/dev/null 2>&1 && docker rm -f $CONTAINER_NAME >/dev/null 2>&1
 		echo "  $CONTAINER_NAME 容器已经删除。"
 		docker run -dit --name=$CONTAINER_NAME -e IP="$SERVER_IP" -e MIDDLE_PORT=$CONTAINER_PORT -e PASSWORD=$PASSWORD -p 127.0.0.1:$CONTAINER_PORT:$CONTAINER_PORT --restart=always $DOCKER_IMAGE
@@ -182,14 +184,19 @@ EOF
 
 # 连接函数
 connect() {
-	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD; do
-		nohup ssh -p $CONTAINER_PORT -ND $IP:$SOCKS_PORT root@localhost >/dev/null 2>&1 &
+	# cat $HOME/.ssh/ssh_config | tail -n 1 | grep "StrictHostKeyChecking no" >/dev/null 2>&1
+	# if [ "$?" = "1" ]; then echo "StrictHostKeyChecking no" >>$HOME/.ssh/ssh_config; fi
+	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
+		nohup ssh -p $CONTAINER_PORT -ND $IP:$SOCKS_PORT \
+			-o StrictHostKeyChecking=no \
+			-o UserKnownHostsFile=/dev/null \
+			-i $ID_RSA root@localhost >/dev/null 2>&1 &
 	done <$LIST_PATH
 }
 
 # 断开连接
 disconnect() {
-	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD; do
+	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
 		get_connect_pid
 		kill $connect_pid >/dev/null 2>&1
 	done <$LIST_PATH
@@ -254,7 +261,7 @@ monitor() {
 	separator
 	echo -en '  代理节点  \t-  Socks 端口  \t-  容器状态  \t-  PID\n'
 	separator
-	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD; do
+	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
 		get_connect_pid
 		container_status=$(docker inspect --format='{{.State.Status}}' $CONTAINER_NAME 2>&1)
 		echo -en '  '$NODE_NAME'  \t-  '$SOCKS_PORT'  \t-  '$container_status'  \t-  '$connect_pid'\n'
