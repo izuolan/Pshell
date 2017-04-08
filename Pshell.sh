@@ -270,10 +270,10 @@ monitor() {
 	NOW_PORT=$(cat $PRIVOXY_CONFIGFILE | tail -n 20 | grep "forward-socks5t" | awk '{print $3}' | cut -d: -f2)
 	echo -en '  socks5->http:'$NOW_PORT'->8118 | Proxy IP:'$(ps -A ssh | grep ssh | grep 10001 | awk '{print $14}' | cut -d: -f1)'\n'
 	separator
-	echo -en '  容器  CPU  \t\t下载  \t\t上传\n'
+	echo -en '  容器  CPU  \t\t下载  \t上传\n'
 	separator
 	container_list=$(cut -d: -f 2 $LIST_PATH | xargs)
-	docker stats --no-stream $container_list | grep '[a-z]' | awk '{print $1,$2,$9,$10,$12,$13}' | tr ' ' '\t' | sed 's/%\t/%\t\t/g' | sed 's/^/  /g'
+	docker stats --no-stream $container_list | grep '[a-z]' | awk '{print $1,$2,$7,$9}' | tr ' ' '\t' | sed 's/%\t/%\t\t/g' | sed 's/^/  /g'
 	separator
 }
 
