@@ -133,7 +133,7 @@ local_daemon() {
 	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
 		docker kill $CONTAINER_NAME >/dev/null 2>&1 && docker rm -f $CONTAINER_NAME >/dev/null 2>&1
 		echo "  $CONTAINER_NAME 容器已经删除。"
-		docker run -dit --name=$CONTAINER_NAME -e IP="$SERVER_IP" -e MIDDLE_PORT=$CONTAINER_PORT -e PASSWORD=$PASSWORD -p 127.0.0.1:$CONTAINER_PORT:$CONTAINER_PORT --restart=always $DOCKER_IMAGE
+		docker run -dit --name=$CONTAINER_NAME --cpus=".05" -e IP="$SERVER_IP" -e MIDDLE_PORT=$CONTAINER_PORT -e PASSWORD=$PASSWORD -p 127.0.0.1:$CONTAINER_PORT:$CONTAINER_PORT --restart=always $DOCKER_IMAGE
 		echo "  $CONTAINER_NAME 容器已经启动。"
 		cp -f $PROXY_CHAINS_CONFIG_PATH/default.conf $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
 		sed -i '$d' $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
@@ -273,7 +273,7 @@ monitor() {
 	echo -en '  容器  CPU  \t\t下载  \t上传\n'
 	separator
 	container_list=$(cut -d: -f 2 $LIST_PATH | xargs)
-	docker stats --no-stream $container_list | grep '[a-z]' | awk '{print $1,$2,$7,$9}' | tr ' ' '\t' | sed 's/%\t/%\t\t/g' | sed 's/^/  /g'
+	docker stats --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.NetIO}}' --no-stream $container_list | grep '[a-z]' | awk '{print $1,$2,$3,$5}' | tr ' ' '\t' | sed 's/%\t/%\t\t/g' | sed 's/^/  /g'
 	separator
 }
 
