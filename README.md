@@ -106,3 +106,5 @@ $ ./Pshell.sh -c
 ## 最后
 使用 alias 指定脚本为特定命令即可更加方便启动。
 其他功能自己发现，其实也没什么其他功能了。在脚本中可以看到全部可选参数，有些没有写在帮助中。
+
+Ptunnel 的源码在这里：[传送门](https://github.com/izuolan/dockerfiles/tree/master/ptunnel)
