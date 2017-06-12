@@ -45,6 +45,7 @@ $ ./Pshell.sh -h
   -k (--kill)      -  重启 sshd 进程（当 ssh 无法连接时使用）。
   -l (--local)     -  安装本地守护容器。
   -s (--server)    -  安装服务器守护进程。
+  -u (--update)    -  检测版本以及更新脚本。
   -h (--help)      -  显示帮助信息。详细说明阅读 README 文件。
 ```
 

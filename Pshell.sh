@@ -362,7 +362,8 @@ while [ -n "$1" ]; do
 		exit 0
 		;;
 	-u | --update)
-		update
+		update;
+		exit 0;
 		;;
 	-h | --help)
 		help
