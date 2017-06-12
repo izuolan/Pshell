@@ -114,7 +114,7 @@ server_daemon() {
 	done
 	docker ps -a | grep "ptunnel_server" >/dev/null 2>&1
 	if [ $? = 0 ]; then docker rm -f ptunnel_server; fi
-	docker run -dit --name=ptunnel_server --net=host -e PASSWORD=$PASSWORD --restart=always zuolan/ptunnel:server
+	docker run -dit --name=ptunnel_server --net=host --cpus=".05" -e PASSWORD=$PASSWORD --restart=always zuolan/ptunnel:server
 	echo "  Ptunnel 已经启动。"
 	separator
 	exit 0
