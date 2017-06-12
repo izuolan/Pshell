@@ -181,6 +181,7 @@ help() {
   -l (--local)     -  安装本地守护容器。
   -s (--server)    -  安装服务器守护进程。
   -u (--update)    -  检测版本以及更新脚本。
+  -e (--edit)      -  编辑配置列表。
   -h (--help)      -  显示帮助信息。详细说明阅读 README 文件。
 EOF
 	exit 0
@@ -332,6 +333,13 @@ restart_sshd() {
 	echo "全部代理已重置，sshd 进程已终止，正在重新建立代理连接。"
 }
 
+# 编辑配置文件
+edit_config() {
+	$EDITOR $LIST_PATH
+	echo "配置文件改变，请重新执行--local部署。"
+	exit 0
+}
+
 while [ -n "$1" ]; do
 	case "$1" in
 	-a | --auto)
@@ -364,6 +372,9 @@ while [ -n "$1" ]; do
 	-u | --update)
 		update;
 		exit 0;
+		;;
+	-e | --edit)
+		edit_config
 		;;
 	-h | --help)
 		help
