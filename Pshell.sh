@@ -180,6 +180,7 @@ help() {
   -k (--kill)      -  重启 sshd 进程（当 ssh 无法连接时使用）。
   -l (--local)     -  安装本地守护容器。
   -s (--server)    -  安装服务器守护进程。
+  -u (--update)    -  检测版本以及更新脚本。
   -h (--help)      -  显示帮助信息。详细说明阅读 README 文件。
 EOF
 	exit 0
@@ -187,7 +188,20 @@ EOF
 
 # 脚本更新
 update() {
-	
+	NEW_VERSION=$(curl -s https://raw.githubusercontent.com/izuolan/Pshell/master/VERSION | head -n1)
+	if [ "$VERSION" = "$NEW_VERSION" ]; then
+		echo "当前脚本已经是最新版本。"
+	else
+		echo -n "脚本有新版本，是否更新？[Y/n]"
+		read -s CONFIRM
+		if [ "$CONFIRM" = "y" || "$CONFIRM" = "Y" ]; then
+			curl -s https://raw.githubusercontent.com/izuolan/Pshell/master/Pshell.sh >$(
+				cd $(dirname $0)
+				pwd
+			)/Pshell.sh
+			echo "脚本更新完成。"
+		fi
+	fi
 }
 # 连接函数
 connect() {
@@ -320,47 +334,50 @@ restart_sshd() {
 
 while [ -n "$1" ]; do
 	case "$1" in
-		-a | --auto)
-			auto_connect
-			;;
-		-f | --fix)
-			fix_connect
-			exit 0
-			;;
-		-m | --monitor)
-			monitor
-			exit 0
-			;;
-		-d | --driver)
-			DRIVER=$2
-			driver
-			shift
-			;;
-		-p | --port)
-			NEW_PORT=$2
-			socks_to_http
-			shift
-			;;
-		-k | --kill)
-			restart_sshd
-			connect
-			monitor
-			exit 0
-			;;
-		-h | --help)
-			help
-			;;
-		-s | --server)
-			server_daemon
-			;;
-		-l | --local)
-			local_daemon
-			;;
-		*)
-			echo "  参数错误，请阅读帮助文档："
-			$0 -h
-			exit 1
-			;;
+	-a | --auto)
+		auto_connect
+		;;
+	-f | --fix)
+		fix_connect
+		exit 0
+		;;
+	-m | --monitor)
+		monitor
+		exit 0
+		;;
+	-d | --driver)
+		DRIVER=$2
+		driver
+		shift
+		;;
+	-p | --port)
+		NEW_PORT=$2
+		socks_to_http
+		shift
+		;;
+	-k | --kill)
+		restart_sshd
+		connect
+		monitor
+		exit 0
+		;;
+	-u | --update)
+		update
+		;;
+	-h | --help)
+		help
+		;;
+	-s | --server)
+		server_daemon
+		;;
+	-l | --local)
+		local_daemon
+		;;
+	*)
+		echo "  参数错误，请阅读帮助文档："
+		$0 -h
+		exit 1
+		;;
 	esac
 	shift
 done
