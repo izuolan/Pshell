@@ -39,6 +39,9 @@ TIME_OUT=2
 TEST_SITE="baidu.com"
 TEST_SITE_SIZE_HEADER="335"
 
+# 脚本当前版本
+VERSION="1.0"
+
 ########################################################################
 
 # 安装软件
@@ -182,6 +185,10 @@ EOF
 	exit 0
 }
 
+# 脚本更新
+update() {
+	
+}
 # 连接函数
 connect() {
 	# cat $HOME/.ssh/ssh_config | tail -n 1 | grep "StrictHostKeyChecking no" >/dev/null 2>&1
