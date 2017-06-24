@@ -14,8 +14,8 @@ IP=0.0.0.0
 LIST_FILE="proxy.list"
 # 为alias设置绝对路径。
 LIST_PATH="$(
-	cd $(dirname $0)
-	pwd
+cd $(dirname $0)
+pwd
 )/$LIST_FILE"
 
 # Proxychains4 配置路径
@@ -39,14 +39,11 @@ TIME_OUT=2
 TEST_SITE="baidu.com"
 TEST_SITE_SIZE_HEADER="335"
 
-# 脚本当前版本
-VERSION="1.0"
-
 ########################################################################
 
 # 安装软件
 install_base() {
-	software_deps="git make privoxy libpcap-dev gcc sudo"
+	software_deps="git make privoxy libpcap-dev gcc sudo autossh"
 	command -v apt >/dev/null 2>&1
 	if [ $? = 0 ]; then
 		sudo apt install -y $software_deps
@@ -117,7 +114,7 @@ server_daemon() {
 	done
 	docker ps -a | grep "ptunnel_server" >/dev/null 2>&1
 	if [ $? = 0 ]; then docker rm -f ptunnel_server; fi
-	docker run -dit --name=ptunnel_server --net=host --cpus=".05" -e PASSWORD=$PASSWORD --restart=always zuolan/ptunnel:server
+	docker run -dit --name=ptunnel_server --net=host -e PASSWORD=$PASSWORD --restart=always zuolan/ptunnel:server
 	echo "  Ptunnel 已经启动。"
 	separator
 	exit 0
@@ -173,11 +170,11 @@ help() {
   一个关于 Ptunnel 部署以及代理管理的脚本。不加参数直接运行脚本即可连接。
   可选参数   -  说明
 ------------------------------------------------------------------------------
-  -a (--auto)      -  断线自动重连，自动修复断开的连接。
+  -c (--connect)   -  直接连接模式（默认为自动重连模式）。
   -m (--monitor)   -  查看代理运行情况。
   -d (--driver)    -  使用 -d [enp3s0|wlp2s0|eth0|wlan0] 指定网卡(默认全部)。
   -p (--port)      -  选择本地 HTTP 代理端口（默认配置/etc/privoxy/config）。
-  -k (--kill)      -  重启 sshd 进程（当 ssh 无法连接时使用）。
+  -k (--kill)      -  重启 autossh 和 sshd 进程（当连接长时间终端时使用）。
   -l (--local)     -  安装本地守护容器。
   -s (--server)    -  安装服务器守护进程。
   -u (--update)    -  检测版本以及更新脚本。
@@ -201,9 +198,12 @@ update() {
 				pwd
 			)/Pshell.sh
 			echo "脚本更新完成。"
+		else
+			echo "脚本暂时不更新。"
 		fi
 	fi
 }
+
 # 连接函数
 connect() {
 	# cat $HOME/.ssh/ssh_config | tail -n 1 | grep "StrictHostKeyChecking no" >/dev/null 2>&1
@@ -224,58 +224,32 @@ disconnect() {
 	done <$LIST_PATH
 }
 
-# 自动重连
-auto_connect() {
-	echo -en "\033[?25l"
-	while :; do
-		echo -en " | "
-		bash -c "$0 -f" 2>&1
-		http_status=$(timeout $TIME_OUT curl -I -s --connect-timeout $TIME_OUT $TEST_SITE -w %{size_header} | tail -n1)
-		if [ "$http_status" != "$TEST_SITE_SIZE_HEADER" ]; then
-			echo -en "http 代理异常"
-			# sudo bash -c "echo \"export http_proxy='http://172.16.168.200:8118'\"" >> /etc/profile
-			# sudo bash -c "echo \"export https_proxy='http://172.16.168.200:8118'\"" >> /etc/profile
-			# sudo bash -c "/etc/init.d/privoxy restart" >/dev/null 2>&1
-		else
-			echo -en "http 代理正常"
-		fi
-		echo -en " | "
-		echo -en "\r"
-	done
-}
-fix_connect() {
-	command -v timeout >/dev/null 2>&1
-	if [ $? != 0 ]; then echo "自动重连不支持当前操作系统"; fi
-	for line in $(cat $LIST_PATH); do
-		if [ ! -n "$line" ]; then break; fi
-		IFS=:
-		NODE_NAME=$(echo ${line} | cut -d: -f2 | awk '{print $1}')
-		CONTAINER_NAME=$(echo ${line} | cut -d: -f2 | awk '{print $2}')
-		CONTAINER_PORT=$(echo ${line} | cut -d: -f2 | awk '{print $3}')
-		SOCKS_PORT=$(echo ${line} | cut -d: -f2 | awk '{print $4}')
-		SERVER_IP=$(echo ${line} | cut -d: -f2 | awk '{print $5}')
-		unset http_proxy
-		HTTP_CODE=$(proxychains4 -q -f $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf timeout $TIME_OUT curl -I -s --connect-timeout $TIME_OUT $TEST_SITE -w %{http_code} | tail -n1 &)
-		if [ "$HTTP_CODE" != "200" ]; then
-			get_connect_pid
-			kill $connect_pid >/dev/null 2>&1
-			old_connect_pid="$connect_pid"
-			nohup ssh -p $CONTAINER_PORT -ND $IP:$SOCKS_PORT root@localhost >/dev/null 2>&1 &
-			get_connect_pid
-			eval ${CONTAINER_NAME}_status="已经修复"
-			# echo "$NODE_NAME 节点已修复，$old_connect_pid -> $connect_pid"
-		else
-			eval ${CONTAINER_NAME}_status="连接正常"
-		fi
-		eval echo -en "$NODE_NAME：\$${CONTAINER_NAME}_status"
-		echo -en " | "
-	done
-}
-
 # 获取ssh的pid
 get_connect_pid() {
-	connect_pid=$(ps -A ssh | grep ssh | grep $SOCKS_PORT | awk '{print $2}')
+	connect_pid=$(ps -A ssh | grep "/ssh" | grep $SOCKS_PORT | awk '{print $2}')
 	if [ ! -n "$connect_pid" ]; then connect_pid="进程不存在"; fi
+}
+
+# 自动重连
+auto_connect() {
+	export AUTOSSH_PIDFILE=/tmp/autossh.pid
+	export AUTOSSH_POLL=60
+	export AUTOSSH_FIRST_POLL=30
+	export AUTOSSH_GATETIME=0
+	export AUTOSSH_DEBUG=1
+    while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
+		nohup autossh -M 0 -4 -p $CONTAINER_PORT -ND $IP:$SOCKS_PORT \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=3 \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -i $ID_RSA root@localhost >/dev/null 2>&1 &
+    done <$LIST_PATH
+}
+fix_auto_connect() {
+	pkill -9 autossh
+	auto_connect
 }
 
 # 状态查看函数
@@ -339,57 +313,48 @@ edit_config() {
 	echo "配置文件改变，请重新执行--local部署。"
 	exit 0
 }
-
 while [ -n "$1" ]; do
 	case "$1" in
-	-a | --auto)
-		auto_connect
-		;;
-	-f | --fix)
-		fix_connect
-		exit 0
-		;;
-	-m | --monitor)
-		monitor
-		exit 0
-		;;
-	-d | --driver)
-		DRIVER=$2
-		driver
-		shift
-		;;
-	-p | --port)
-		NEW_PORT=$2
-		socks_to_http
-		shift
-		;;
-	-k | --kill)
-		restart_sshd
-		connect
-		monitor
-		exit 0
-		;;
-	-u | --update)
-		update;
-		exit 0;
-		;;
-	-e | --edit)
-		edit_config
-		;;
-	-h | --help)
-		help
-		;;
-	-s | --server)
-		server_daemon
-		;;
-	-l | --local)
-		local_daemon
-		;;
-	*)
-		echo "  参数错误，请阅读帮助文档："
-		$0 -h
-		exit 1
-		;;
+		-c | --connect)
+			disconnect; connect; exit 0;
+			;;
+		-m | --monitor)
+			monitor
+			exit 0
+			;;
+		-d | --driver)
+			DRIVER=$2
+			driver
+			shift
+			;;
+		-p | --port)
+			NEW_PORT=$2
+			socks_to_http
+			shift
+			;;
+		-k | --kill)
+			restart_sshd
+			fix_auto_connect
+			monitor
+			exit 0
+			;;
+		-e | --edit)
+			edit_config
+			;;
+		-h | --help)
+			help
+			;;
+		-s | --server)
+			server_daemon
+			;;
+		-l | --local)
+			local_daemon
+			;;
+		*)
+			echo "  参数错误，请阅读帮助文档："
+			$0 -h
+			exit 1
+			;;
 	esac
 	shift
 done
@@ -401,7 +366,7 @@ debug() {
 
 main() {
 	disconnect
-	connect
+	fix_auto_connect
 	monitor
 }
 
