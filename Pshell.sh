@@ -1,5 +1,8 @@
 #! /bin/bash
 ########################################################################
+# 设置版本
+VERSION=2.0
+
 # 设置守护容器的镜像
 DOCKER_IMAGE="zuolan/ptunnel:local"
 
@@ -190,17 +193,13 @@ update() {
 	if [ "$VERSION" = "$NEW_VERSION" ]; then
 		echo "当前脚本已经是最新版本。"
 	else
-		echo -n "脚本有新版本，是否更新？[Y/n]"
+		echo -n "脚本有新版本，是否更新？（回车更新，按 Ctrl-C 取消。）"
 		read -s CONFIRM
-		if [ "$CONFIRM" = "y" || "$CONFIRM" = "Y" ]; then
-			curl -s https://raw.githubusercontent.com/izuolan/Pshell/master/Pshell.sh >$(
-				cd $(dirname $0)
-				pwd
-			)/Pshell.sh
-			echo "脚本更新完成。"
-		else
-			echo "脚本暂时不更新。"
-		fi
+		curl -s https://raw.githubusercontent.com/izuolan/Pshell/master/Pshell.sh >$(
+		cd $(dirname $0)
+		pwd
+		)/Pshell.sh
+		echo "脚本更新完成。"
 	fi
 }
 
@@ -254,6 +253,7 @@ fix_auto_connect() {
 
 # 状态查看函数
 monitor() {
+	sleep 0.5
 	separator
 	echo -en '  代理节点  \t-  Socks 端口  \t-  容器状态  \t-  PID\n'
 	separator
@@ -340,6 +340,9 @@ while [ -n "$1" ]; do
 			;;
 		-e | --edit)
 			edit_config
+			;;
+		-u | --update)
+			update
 			;;
 		-h | --help)
 			help
