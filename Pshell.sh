@@ -1,17 +1,17 @@
 #! /bin/bash
 ########################################################################
-# 设置版本
+# 版本（请不要随便修改）
 VERSION="4.0"
 
 # 设置守护容器的镜像
-DOCKER_IMAGE="zuolan/ptunnel:local"
+DOCKER_IMAGE="zuolan/pshell:local"
 
 # 设置文件分隔符
 FILE_SEPARATOR=":"
 
-# 设置socks5转http配置文件的路径，默认情况下不用修改。
-# 当IP为127.0.0.1时只允许本地访问，可以通过 -n 参数指定网卡，修改后可允许其他电脑使用你的Socks5代理（或者直接使用0.0.0.0，允许所有人访问）。
-IP=0.0.0.0
+# 当 IP 为 127.0.0.1 时只允许本地访问，通过 -n 参数指定网卡可以分享给特定网络。
+# 修改后可允许其他电脑使用你的 Socks5 代理（或者直接改为 0.0.0.0，允许所有人访问）。
+IP=127.0.0.1
 
 # 设置虚拟网卡的 IP 地址，如果服务端没有指定 VIP_GATE 参数，则 VIP 保留默认即可。
 VIP=10.1.2.1
@@ -32,18 +32,15 @@ PROXY_CHAINS_CONFIG_PATH="$(
 # 设置 Privoxy 配置路径
 PRIVOXY_CONFIGFILE="/etc/privoxy/config"
 
-# 设置服务端的日志文件
-PTUNNEL_LOG="ptunnel.log"
-
 # 懒得打分割线
 separator="-------------------------------------------------------------"
 
-# 设置超时时间（单位为秒）
-TIME_OUT=2
-
-# 测试连通站点
-TEST_SITE="baidu.com"
-TEST_SITE_SIZE_HEADER="335"
+# Autossh 全局变量
+AUTOSSH_PIDFILE=/tmp/autossh.pid
+AUTOSSH_POLL=5
+AUTOSSH_FIRST_POLL=2
+AUTOSSH_GATETIME=0
+AUTOSSH_DEBUG=1
 
 ########################################################################
 
@@ -98,19 +95,19 @@ install_docker() {
 	fi
 }
 
-# 服务器安装并运行 Ptunnel
+# 服务器安装并运行 Pshell
 server_daemon() {
-	if [ $(id -u) -eq 0 ]; then echo "  开始安装 Ptunnel 服务端。"; else
+	if [ $(id -u) -eq 0 ]; then echo "  开始安装 Pshell 服务端。"; else
 		echo "  请使用 Root 用户执行本脚本。"
 		exit 1
 	fi
 	install_docker
 	# if [ -n "$PASSWORD" ]; then break; fi
 	while true; do
-		echo -n "  输入 Ptunnel 密码："
+		echo -n "  输入 Pshell 密码："
 		read -s FIRST_PASSWORD
 		echo ""
-		echo -n "  再输入一次 Ptunnel 密码："
+		echo -n "  再输入一次 Pshell 密码："
 		read -s SECOND_PASSWORD
 		echo ""
 		if [ "$FIRST_PASSWORD" = "$SECOND_PASSWORD" ]; then
@@ -118,12 +115,14 @@ server_daemon() {
 			break
 		else echo "  两次密码不相同。"; fi
 	done
-	docker ps -a | grep "ptunnel_server" >/dev/null 2>&1
-	if [ $? = 0 ]; then docker rm -f ptunnel_server; fi
-	docker run -dit --name=ptunnel_server --network=host --privileged -e PASSWORD=$PASSWORD --restart=always zuolan/ptunnel:server
-	echo "  Ptunnel 已经启动。"
+	docker ps -a | grep "pshell_server" >/dev/null 2>&1
+	if [ $? = 0 ]; then docker rm -f pshell_server; fi
+	docker run -dit --name=pshell_server \
+		--network=host --privileged \
+		-e PASSWORD=$PASSWORD \
+		--restart=always zuolan/pshell:server
+	echo "  Pshell 已经启动。"
 	separator
-	exit 0
 }
 
 # 本地运行守护容器
@@ -139,7 +138,13 @@ local_daemon() {
 	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
 		docker kill $CONTAINER_NAME >/dev/null 2>&1 && docker rm -f $CONTAINER_NAME >/dev/null 2>&1
 		echo "  $CONTAINER_NAME 容器已经删除。"
-		docker run -dit --name=$CONTAINER_NAME --network=host --privileged --cpus=".05" -e IP="$SERVER_IP" -e MIDDLE_PORT=$CONTAINER_PORT -e PASSWORD=$PASSWORD -p 127.0.0.1:$CONTAINER_PORT:$CONTAINER_PORT --restart=always $DOCKER_IMAGE
+		docker run -dit --name=$CONTAINER_NAME \
+			--network=host --privileged --cpus=".05" \
+			-e IP="$SERVER_IP" \
+			-e MIDDLE_PORT=$CONTAINER_PORT \
+			-e PASSWORD=$PASSWORD \
+			-p 127.0.0.1:$CONTAINER_PORT:$CONTAINER_PORT \
+			--restart=always $DOCKER_IMAGE
 		echo "  $CONTAINER_NAME 容器已经启动。"
 		cp -f $PROXY_CHAINS_CONFIG_PATH/default.conf $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
 		sed -i '$d' $PROXY_CHAINS_CONFIG_PATH/$CONTAINER_NAME.conf
@@ -166,13 +171,13 @@ separator() {
 help() {
 	cat <<EOF
 ------------------------------------------------------------------------------
-   ____  _                          _   ____  _          _ _ 
-  |  _ \| |_ _   _ _ __  _ __   ___| | / ___|| |__   ___| | |
-  | |_) | __| | | | '_ \| '_ \ / _ \ | \___ \| '_ \ / _ \ | |
-  |  __/| |_| |_| | | | | | | |  __/ |  ___) | | | |  __/ | |
-  |_|    \__|\__,_|_| |_|_| |_|\___|_| |____/|_| |_|\___|_|_|
+   ___ ____ __  __ ____   _____ ____    ____  _          _ _ 
+  |_ _/ ___|  \/  |  _ \ / /_ _|  _ \  / ___|| |__   ___| | |
+   | | |   | |\/| | |_) / / | || |_) | \___ \| '_ \ / _ \ | |
+   | | |___| |  | |  __/ /  | ||  __/   ___) | | | |  __/ | |
+  |___\____|_|  |_|_| /_/  |___|_|     |____/|_| |_|\___|_|_|
   Email: i@zuolan.me                 Blog: https://zuolan.me
-  一个隧道部署与代理管理的脚本。不加参数直接运行脚本即可连接。
+  一个把 ICMP/IP 协议转换为 TCP 协议的脚本。直接执行即可连接。
 ------------------------------------------------------------------------------
   可选参数         -  说明
 ------------------------------------------------------------------------------
@@ -188,7 +193,6 @@ help() {
   -f (--fast)      -  快速模式，网络不限速（实验功能，安全性有待考究）。
   -h (--help)      -  显示帮助信息。详细说明请阅读 README 文件。
 EOF
-	exit 0
 }
 
 # 脚本更新
@@ -209,13 +213,8 @@ update() {
 
 # ICMP 模式的自动重连
 auto_connect() {
-	export AUTOSSH_PIDFILE=/tmp/autossh.pid
-	export AUTOSSH_POLL=5
-	export AUTOSSH_FIRST_POLL=2
-	export AUTOSSH_GATETIME=0
-	export AUTOSSH_DEBUG=1
     while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
-		nohup autossh -M 0 -4 -p $CONTAINER_PORT -ND $IP:$SOCKS_PORT \
+		nohup autossh -M 0 -4 -ND $IP:$SOCKS_PORT -p $CONTAINER_PORT \
             -o ServerAliveInterval=5 \
             -o ServerAliveCountMax=2 \
             -o BatchMode=yes \
@@ -226,16 +225,12 @@ auto_connect() {
 }
 fix_auto_connect() {
 	pkill -9 autossh
+	pkill -9 ssh
 	auto_connect
 }
 
 # IP 模式的自动重连
 fast_auto_connect() {
-	export AUTOSSH_PIDFILE=/tmp/autossh.pid
-	export AUTOSSH_POLL=5
-	export AUTOSSH_FIRST_POLL=2
-	export AUTOSSH_GATETIME=0
-	export AUTOSSH_DEBUG=1
     while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
 		nohup autossh -M 0 -4 -ND $IP:$SOCKS_PORT \
             -o ServerAliveInterval=5 \
@@ -248,6 +243,7 @@ fast_auto_connect() {
 }
 fast_fix_auto_connect() {
 	pkill -9 autossh
+	pkill -9 ssh
 	fast_auto_connect
 }
 
@@ -278,12 +274,18 @@ monitor() {
 	done <$LIST_PATH
 	separator
 	NOW_PORT=$(cat $PRIVOXY_CONFIGFILE | tail -n 20 | grep "forward-socks5t" | awk '{print $3}' | cut -d: -f2)
-	echo -en '  socks5->http:'$NOW_PORT'->8118 | Proxy IP:'$(ps -p $connect_pid -o args 2>&1 | grep "ssh" | cut -d: -f1 | awk '{print $6}')'\n'
+	PROXY_IP=$(ps -p $connect_pid -o args 2>&1 | grep "ssh" | cut -d: -f1 | awk '{print $4}')
+	echo -en "  socks5->http: $NOW_PORT->8118 | Socks5 Proxy IP: $PROXY_IP\n"
 	separator
 	echo -en '  容器  CPU  \t\t下载  \t上传\n'
 	separator
 	container_list=$(cut -d: -f 2 $LIST_PATH | xargs)
-	docker stats --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.NetIO}}' --no-stream $container_list | grep '[a-z]' | awk '{print $1,$2,$3,$5}' | tr ' ' '\t' | sed 's/%\t/%\t\t/g' | sed 's/^/  /g'
+	docker stats --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.NetIO}}' --no-stream $container_list \
+	| grep '[a-z]' \
+	| awk '{print $1,$2,$3,$5}' \
+	| tr ' ' '\t' \
+	| sed 's/%\t/%\t\t/g' \
+	| sed 's/^/  /g'
 	separator
 }
 
@@ -318,6 +320,7 @@ socks_to_http() {
 kill_all() {
 	disconnect
 	pkill -9 autossh >/dev/null 2>&1
+	pkill -9 ssh >/dev/null 2>&1
 	sudo killall sshd >/dev/null 2>&1
 	echo "全部代理已重置，代理隧道进程已终止，请手动重新建立代理连接。"
 }
@@ -326,12 +329,13 @@ kill_all() {
 edit_config() {
 	$EDITOR $LIST_PATH
 	echo "配置文件改变，请重新执行--local部署。"
-	exit 0
 }
+
 while [ -n "$1" ]; do
 	case "$1" in
 		-f | --fast)
 			fast_fix_auto_connect
+			monitor
 			exit 0
 			;;
 		-m | --monitor)
@@ -354,15 +358,19 @@ while [ -n "$1" ]; do
 			;;
 		-e | --edit)
 			edit_config
+			exit 0
 			;;
 		-u | --update)
 			update
+			exit 0
 			;;
 		-h | --help)
 			help
+			exit 0
 			;;
 		-s | --server)
 			server_daemon
+			exit 0
 			;;
 		-l | --local)
 			local_daemon
