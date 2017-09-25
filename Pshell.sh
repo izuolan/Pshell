@@ -177,12 +177,12 @@ help() {
    | | |___| |  | |  __/ /  | ||  __/   ___) | | | |  __/ | |
   |___\____|_|  |_|_| /_/  |___|_|     |____/|_| |_|\___|_|_|
   Email: i@zuolan.me                 Blog: https://zuolan.me
-  一个把 ICMP/IP 协议转换为 TCP 协议的脚本。直接执行即可连接。
+  一个隧道部署与代理管理的脚本。不加参数直接运行脚本即可连接。
 ------------------------------------------------------------------------------
   可选参数         -  说明
 ------------------------------------------------------------------------------
   -f (--fast)      -  快速模式（切换为 IP 协议隧道，速度更快，安全性降低）。
-  -m (--monitor)   -  查看代理运行情况。
+  -m (--monitor)   -  查看代理与容器运行的情况。
   -d (--driver)    -  指定网卡（enp3s0|wlp2s0|eth0|wlan0），默认全部。
   -p (--port)      -  选择本地 HTTP 代理端口（默认配置/etc/privoxy/config）。
   -k (--kill)      -  杀死 autossh 和 sshd 进程（当连接长时间中断时使用）。
@@ -214,6 +214,8 @@ update() {
 # ICMP 模式的自动重连
 auto_connect() {
     while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
+		# ssh 反应速度有限，根据硬盘速度适当调整下面的值，以免出现“进程不存在”的提示。
+		sleep 0.2
 		nohup autossh -M 0 -4 -ND $IP:$SOCKS_PORT -p $CONTAINER_PORT \
             -o ServerAliveInterval=5 \
             -o ServerAliveCountMax=2 \
@@ -224,14 +226,16 @@ auto_connect() {
     done <$LIST_PATH
 }
 fix_auto_connect() {
-	pkill -9 autossh
-	pkill -9 ssh
+	pkill -9 /usr/lib/autossh/autossh >/dev/null 2>&1
+	killall -9 /usr/bin/ssh >/dev/null 2>&1
 	auto_connect
 }
 
 # IP 模式的自动重连
 fast_auto_connect() {
     while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
+		# ssh 反应速度有限，根据硬盘速度适当调整下面的值，以免出现“进程不存在”的提示。
+		sleep 0.2
 		nohup autossh -M 0 -4 -ND $IP:$SOCKS_PORT \
             -o ServerAliveInterval=5 \
             -o ServerAliveCountMax=2 \
@@ -242,8 +246,8 @@ fast_auto_connect() {
     done <$LIST_PATH
 }
 fast_fix_auto_connect() {
-	pkill -9 autossh
-	pkill -9 ssh
+	pkill -9 /usr/lib/autossh/autossh >/dev/null 2>&1
+	killall -9 /usr/bin/ssh >/dev/null 2>&1
 	fast_auto_connect
 }
 
@@ -277,15 +281,26 @@ monitor() {
 	PROXY_IP=$(ps -p $connect_pid -o args 2>&1 | grep "ssh" | cut -d: -f1 | awk '{print $4}')
 	echo -en "  socks5->http: $NOW_PORT->8118 | Socks5 Proxy IP: $PROXY_IP\n"
 	separator
+	CONNECT_ADDR=$(ps -p $connect_pid -o args 2>&1 | grep -v grep | grep ssh | awk '{print $NF}' | cut -d@ -f2)
+	if [ "$CONNECT_ADDR" = "$VIP" ]; then
+		echo "  当前为 IP 模式，速度不限制，请注意 DDoS 警报。"
+	else
+		echo "  当前为 ICMP 模式，如果无法连接请切换到“快速模式”。"
+	fi
+}
+
+# 查看容器状态
+container_monitor() {
+	separator
 	echo -en '  容器  CPU  \t\t下载  \t上传\n'
 	separator
 	container_list=$(cut -d: -f 2 $LIST_PATH | xargs)
 	docker stats --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.NetIO}}' --no-stream $container_list \
-	| grep '[a-z]' \
-	| awk '{print $1,$2,$3,$5}' \
-	| tr ' ' '\t' \
-	| sed 's/%\t/%\t\t/g' \
-	| sed 's/^/  /g'
+		| grep '[a-z]' \
+		| awk '{print $1,$2,$3,$5}' \
+		| tr ' ' '\t' \
+		| sed 's/%\t/%\t\t/g' \
+		| sed 's/^/  /g'
 	separator
 }
 
@@ -319,8 +334,8 @@ socks_to_http() {
 # 关闭所有代理隧道
 kill_all() {
 	disconnect
-	pkill -9 autossh >/dev/null 2>&1
-	pkill -9 ssh >/dev/null 2>&1
+	pkill -9 /usr/lib/autossh/autossh >/dev/null 2>&1
+	pkill -9 /usr/bin/ssh >/dev/null 2>&1
 	sudo killall sshd >/dev/null 2>&1
 	echo "全部代理已重置，代理隧道进程已终止，请手动重新建立代理连接。"
 }
@@ -328,7 +343,7 @@ kill_all() {
 # 编辑配置文件
 edit_config() {
 	$EDITOR $LIST_PATH
-	echo "配置文件改变，请重新执行--local部署。"
+	echo "如配置文件改变，请重新执行 --local 部署。"
 }
 
 while [ -n "$1" ]; do
@@ -340,6 +355,7 @@ while [ -n "$1" ]; do
 			;;
 		-m | --monitor)
 			monitor
+			container_monitor
 			exit 0
 			;;
 		-d | --driver)
