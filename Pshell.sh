@@ -1,70 +1,64 @@
 #! /bin/bash
-########################################################################
+#####################################################################################
 # 版本（请不要随便修改）
-VERSION="4.0"
-
+VERSION="5.0"
+#####################################################################################
 # 设置守护容器的镜像
 DOCKER_IMAGE="zuolan/pshell:local"
-
-# 设置文件分隔符
-FILE_SEPARATOR=":"
-
-# 当 IP 为 127.0.0.1 时只允许本地访问，通过 -n 参数指定网卡可以分享给特定网络。
+#####################################################################################
+# 当 IP 为 127.0.0.1 时只允许本地访问，通过 -d 参数指定网卡可以分享给特定网络。
 # 修改后可允许其他电脑使用你的 Socks5 代理（或者直接改为 0.0.0.0，允许所有人访问）。
 IP=127.0.0.1
-
-# 设置虚拟网卡的 IP 地址，如果服务端没有指定 VIP_GATE 参数，则 VIP 保留默认即可。
+# 设置虚拟网卡的 IP 地址，如果服务端容器启动时没有指定 VIP_GATE 参数，则 VIP 保留默认即可。
 VIP=10.1.2.1
-
-# Proxy列表定义
+#####################################################################################
+# 代理列表文件名（不建议修改）
 LIST_FILE="proxy.list"
-# 为alias设置绝对路径。
+# 设置代理列表各项的分隔符（不建议修改）
+FILE_SEPARATOR=":"
+# 设置绝对路径以保证 alias 能够读取到配置文件（不建议修改）
 LIST_PATH="$(
 cd $(dirname $0)
 pwd
 )/$LIST_FILE"
-
-# Proxychains4 配置路径
+# 设置代理列表各项的含义（不建议修改）
+VAR="NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA"
+#####################################################################################
+# Proxychains4 配置路径，脚本根据这个路径自动生成代理配置（不建议修改）
 PROXY_CHAINS_CONFIG_PATH="$(
 	cd $(dirname $0)
 	pwd
 )/config"
-# 设置 Privoxy 配置路径
+# 设置 Privoxy 配置路径（这个是系统默认的路径，一般不用修改）
 PRIVOXY_CONFIGFILE="/etc/privoxy/config"
-
+#####################################################################################
 # 懒得打分割线
-separator="-------------------------------------------------------------"
-
+separator="---------------------------------------------------------------"
 # Autossh 全局变量
 AUTOSSH_PIDFILE=/tmp/autossh.pid
 AUTOSSH_POLL=5
 AUTOSSH_FIRST_POLL=2
 AUTOSSH_GATETIME=0
 AUTOSSH_DEBUG=1
-
-########################################################################
+#####################################################################################
 
 # 安装软件
 install_base() {
 	software_deps="git make privoxy libpcap-dev gcc sudo autossh"
-	command -v apt >/dev/null 2>&1
-	if [ $? = 0 ]; then
+	if command -v apt >/dev/null 2>&1; then
 		sudo apt install -y $software_deps
 		separator
 		echo "  软件依赖已经安装完成。"
 		separator
+	elif command -v yum >/dev/null 2>&1; then
+		sudo yum install -y $software_deps
+		separator
+		echo "  软件依赖已经安装完成。"
+		separator
 	else
-		command -v yum >/dev/null 2>&1
-		if [ $? = 0 ]; then
-			sudo yum install -y $software_deps
-			separator
-			echo "  软件依赖已经安装完成。"
-			separator
-		else
-			separator
-			echo "  没有找到合适的包管理工具，请手动安装 git make privoxy libpcap-dev 等依赖。"
-			separator
-		fi
+		separator
+		echo "  没有找到合适的包管理工具，请手动安装 git make privoxy libpcap-dev 等依赖。"
+		separator
 	fi
 }
 install_proxychains4() {
@@ -135,7 +129,7 @@ local_daemon() {
 	separator
 	echo "  正在启动守护容器，原有同名容器会被强制删除。"
 	separator
-	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
+	while IFS=$FILE_SEPARATOR read $VAR; do
 		docker kill $CONTAINER_NAME >/dev/null 2>&1 && docker rm -f $CONTAINER_NAME >/dev/null 2>&1
 		echo "  $CONTAINER_NAME 容器已经删除。"
 		docker run -dit --name=$CONTAINER_NAME \
@@ -181,17 +175,18 @@ help() {
 ------------------------------------------------------------------------------
   可选参数         -  说明
 ------------------------------------------------------------------------------
-  -f (--fast)      -  快速模式（切换为 IP 协议隧道，速度更快，安全性降低）。
-  -m (--monitor)   -  查看代理与容器运行的情况。
-  -d (--driver)    -  指定网卡（enp3s0|wlp2s0|eth0|wlan0），默认全部。
-  -p (--port)      -  选择本地 HTTP 代理端口（默认配置/etc/privoxy/config）。
-  -k (--kill)      -  杀死 autossh 和 sshd 进程（当连接长时间中断时使用）。
-  -l (--local)     -  安装本地守护容器。
-  -s (--server)    -  安装服务器守护进程。
-  -u (--update)    -  检测版本以及更新脚本。
-  -e (--edit)      -  编辑配置列表。
-  -f (--fast)      -  快速模式，网络不限速（实验功能，安全性有待考究）。
-  -h (--help)      -  显示帮助信息。详细说明请阅读 README 文件。
+  -d (driver)    -  指定网卡（enp3s0|wlp2s0|eth0|wlan0），默认全部。
+  -e (edit)      -  编辑配置列表。
+  -f (fast)      -  快速模式（切换为 IP 协议隧道，速度更快，安全性降低）。
+  -h (help)      -  显示帮助信息。更详细说明请阅读 README 文件。
+  -k (kill)      -  杀死 autossh 和 sshd 进程（当连接长时间中断时使用）。
+  -l (local)     -  安装本地守护容器。
+  -m (monitor)   -  查看代理与容器运行的情况。
+  -n (net)       -  统计代理端口的流量（-n set/unset 开启/重置流量统计）。
+  -p (port)      -  选择本地 HTTP 代理端口（默认配置/etc/privoxy/config）。
+  -s (server)    -  安装服务器守护进程。
+  -u (update)    -  检测版本以及更新脚本。
+------------------------------------------------------------------------------
 EOF
 }
 
@@ -213,7 +208,7 @@ update() {
 
 # ICMP 模式的自动重连
 auto_connect() {
-    while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
+    while IFS=$FILE_SEPARATOR read $VAR; do
 		# ssh 反应速度有限，根据硬盘速度适当调整下面的值，以免出现“进程不存在”的提示。
 		sleep 0.2
 		nohup autossh -M 0 -4 -ND $IP:$SOCKS_PORT -p $CONTAINER_PORT \
@@ -233,7 +228,7 @@ fix_auto_connect() {
 
 # IP 模式的自动重连
 fast_auto_connect() {
-    while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
+    while IFS=$FILE_SEPARATOR read $VAR; do
 		# ssh 反应速度有限，根据硬盘速度适当调整下面的值，以免出现“进程不存在”的提示。
 		sleep 0.2
 		nohup autossh -M 0 -4 -ND $IP:$SOCKS_PORT \
@@ -253,7 +248,7 @@ fast_fix_auto_connect() {
 
 # 断开连接
 disconnect() {
-	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
+	while IFS=$FILE_SEPARATOR read $VAR; do
 		get_connect_pid
 		kill $connect_pid >/dev/null 2>&1
 	done <$LIST_PATH
@@ -267,41 +262,99 @@ get_connect_pid() {
 
 # 状态查看函数
 monitor() {
-	sleep 0.5
+	# sleep 0.5
 	separator
-	echo -en '  代理节点  \t-  Socks 端口  \t-  容器状态  \t-  PID\n'
+	echo -e "  节点  \t-  代理端口  \t-  容器状态  \t-  PID"
 	separator
-	while IFS=: read NODE_NAME CONTAINER_NAME CONTAINER_PORT SOCKS_PORT SERVER_IP PASSWORD ID_RSA; do
+	while IFS=$FILE_SEPARATOR read $VAR; do
 		get_connect_pid
 		container_status=$(docker inspect --format='{{.State.Status}}' $CONTAINER_NAME 2>&1)
-		echo -en '  '$NODE_NAME'  \t-  '$SOCKS_PORT'  \t-  '$container_status'  \t-  '$connect_pid'\n'
+		# if [ "$container_status" = "running" ]; then container_status="OK"; else container_status="ERROR"; fi
+		echo -e "  $NODE_NAME  \t-  $SOCKS_PORT  \t-  $container_status  \t-  $connect_pid"
 	done <$LIST_PATH
 	separator
 	NOW_PORT=$(cat $PRIVOXY_CONFIGFILE | tail -n 20 | grep "forward-socks5t" | awk '{print $3}' | cut -d: -f2)
 	PROXY_IP=$(ps -p $connect_pid -o args 2>&1 | grep "ssh" | cut -d: -f1 | awk '{print $4}')
-	echo -en "  socks5->http: $NOW_PORT->8118 | Socks5 Proxy IP: $PROXY_IP\n"
+	echo "  socks5->http: $NOW_PORT->8118 | Socks5 Proxy IP: $PROXY_IP"
 	separator
-	CONNECT_ADDR=$(ps -p $connect_pid -o args 2>&1 | grep -v grep | grep ssh | awk '{print $NF}' | cut -d@ -f2)
+	CONNECT_ADDR=$(ps -p $connect_pid -o args 2>&1 | grep ssh | awk '{print $NF}' | cut -d@ -f2)
 	if [ "$CONNECT_ADDR" = "$VIP" ]; then
 		echo "  当前为 IP 模式，速度不限制，请注意 DDoS 警报。"
+	elif [ "$CONNECT_ADDR" = "localhost" ]; then
+		echo "  当前为 ICMP 模式，使用 -f 选项可切换到“快速模式”。"
 	else
-		echo "  当前为 ICMP 模式，如果无法连接请切换到“快速模式”。"
+		echo "  网络错误，请重新建立连接。"
 	fi
+	separator
 }
 
-# 查看容器状态
-container_monitor() {
+# 流量统计
+net_montior() {
+	if [ "$NET" = "set" ]; then
+		set_net_montior
+		echo "端口流量统计已开启。现在可以使用 -n 或者 -m 选项查看流量统计。"
+		exit 0
+	elif [ "$NET" = "unset" ]; then
+		unset_net_montior
+		echo "端口流量统计已关闭并清零。使用 -n set 可以再次开启流量统计。"
+		exit 0
+	else
+		check_net_montior
+	fi
 	separator
-	echo -en '  容器  CPU  \t\t下载  \t上传\n'
+	echo -e "  节点  \t-  CPU  \t-  下载  \t-  上传"
 	separator
 	container_list=$(cut -d: -f 2 $LIST_PATH | xargs)
-	docker stats --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.NetIO}}' --no-stream $container_list \
+	# docker stats --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.NetIO}}' --no-stream $container_list \
+	container_cpu=$(docker stats --format '{{.Name}}:{{.CPUPerc}}' --no-stream $container_list \
 		| grep '[a-z]' \
 		| awk '{print $1,$2,$3,$5}' \
 		| tr ' ' '\t' \
 		| sed 's/%\t/%\t\t/g' \
-		| sed 's/^/  /g'
+		| sed 's/^/  /g')
+	while IFS=$FILE_SEPARATOR read CONTAINER_NAME CPU; do
+		c_name=$(echo $CONTAINER_NAME | sed 's|^[ \t]*||g')
+		cpu=$(echo $CPU | sed 's|^[ \t]*||g')
+		eval "$c_name"_"cpu"=$cpu
+		# eval eval echo '$c_name: "$"{"$c_name"_"cpu"}'
+		# eval echo '$'{"$c_name"_"cpu"}
+	done <<EOF
+$container_cpu
+EOF
+	while IFS=$FILE_SEPARATOR read $VAR; do
+		input_bytes=$(sudo iptables -L -v -n -x | grep "dpt:$SOCKS_PORT" | awk '{print $2}')
+		output_bytes=$(sudo iptables -L -v -n -x | grep "spt:$SOCKS_PORT" | awk '{print $2}')
+		INPUT=$((input_bytes/1048576))
+		OUTPUT=$((output_bytes/1048576))
+		eval CPU="$"{"$CONTAINER_NAME"_"cpu"}
+		echo -e "  $NODE_NAME  \t-  $CPU  \t-  $OUTPUT MB  \t-  $INPUT MB"
+	done <$LIST_PATH
 	separator
+}
+set_net_montior() {
+	unset_net_montior
+	while IFS=$FILE_SEPARATOR read $VAR; do
+		sudo iptables -A INPUT -p tcp --dport $SOCKS_PORT
+		sudo iptables -A OUTPUT -p tcp --sport $SOCKS_PORT
+	done <$LIST_PATH
+}
+unset_net_montior() {
+	while IFS=$FILE_SEPARATOR read $VAR; do
+		sudo iptables -D INPUT -p tcp --dport $SOCKS_PORT >/dev/null 2>&1
+		sudo iptables -D OUTPUT -p tcp --sport $SOCKS_PORT >/dev/null 2>&1
+	done <$LIST_PATH
+}
+check_net_montior() {
+	while IFS=$FILE_SEPARATOR read $VAR; do
+		sudo iptables -C INPUT -p tcp --dport $SOCKS_PORT >/dev/null 2>&1
+		if [ "$?" = "1" ]; then INPUT_STAT=1; fi
+		sudo iptables -C OUTPUT -p tcp --sport $SOCKS_PORT >/dev/null 2>&1
+		if [ "$?" = "1" ]; then OUTPUT_STAT=1; fi
+		if [ "$INPUT_STAT" = "1" -o "$OUTPUT_STAT" = "1" ]; then
+			echo "  流量统计没有开启。使用 -n set/unset 可以开启/重置流量统计。"
+			exit 0
+		fi
+	done <$LIST_PATH
 }
 
 # 设置网卡
@@ -348,48 +401,53 @@ edit_config() {
 
 while [ -n "$1" ]; do
 	case "$1" in
-		-f | --fast)
-			fast_fix_auto_connect
-			monitor
-			exit 0
-			;;
-		-m | --monitor)
-			monitor
-			container_monitor
-			exit 0
-			;;
 		-d | --driver)
 			DRIVER=$2
 			driver
 			shift
 			;;
-		-p | --port)
-			NEW_PORT=$2
-			socks_to_http
-			shift
-			;;
-		-k | --kill)
-			kill_all
-			exit 0
-			;;
 		-e | --edit)
 			edit_config
 			exit 0
 			;;
-		-u | --update)
-			update
+		-f | --fast)
+			fast_fix_auto_connect
+			monitor
 			exit 0
 			;;
 		-h | --help)
 			help
 			exit 0
 			;;
-		-s | --server)
-			server_daemon
+		-k | --kill)
+			kill_all
 			exit 0
 			;;
 		-l | --local)
 			local_daemon
+			;;
+		-m | --monitor)
+			monitor
+			net_montior
+			exit 0
+			;;
+		-n | --net)
+			NET=$2
+			net_montior
+			exit 0
+			;;
+		-p | --port)
+			NEW_PORT=$2
+			socks_to_http
+			shift
+			;;
+		-s | --server)
+			server_daemon
+			exit 0
+			;;
+		-u | --update)
+			update
+			exit 0
 			;;
 		*)
 			echo "  参数错误，请阅读帮助文档："
