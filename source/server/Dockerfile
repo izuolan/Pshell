@@ -5,12 +5,12 @@ RUN apk update && apk add --virtual BUILD g++ linux-headers git make libstdc++ l
     apk del BUILD
 
 FROM alpine as ptunnel_build
-COPY ../tunnel /build
+COPY source /build
 WORKDIR /build
 RUN apk update && \
     apk add --no-cache libpcap libstdc++ libgcc && \
     apk add --no-cache --virtual BUILD linux-headers libpcap-dev build-base && \
-    make && make install && \
+    cd tunnel && make && make install && \
     apk del BUILD
 
 FROM alpine
