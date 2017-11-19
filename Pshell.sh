@@ -262,7 +262,7 @@ get_connect_pid() {
 
 # 状态查看函数
 monitor() {
-	# sleep 0.5
+	sleep 0.1
 	separator
 	echo -e "  节点  \t-  代理端口  \t-  容器状态  \t-  PID"
 	separator
